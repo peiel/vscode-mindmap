@@ -13,9 +13,37 @@ angular
 		}
 	})
 	.controller("MainController", function ($scope) {
+		function importMindData(importData, extName) {
+			window.isImportingMindData = true;
+			let importTask = Promise.resolve();
+			try {
+				importTask = importTask.then(() => {
+					if (extName === ".svg") {
+						return new Promise((resolve) => {
+							// 可能出现格式不正确内部抛异常
+							window.minder.importData("svg", importData).then(resolve, resolve);
+						});
+					} else {
+						// 可能出现格式不正确内部抛异常
+						window.minder.importJson(JSON.parse(importData || "{}"));
+					}
+				});
+			} catch (ex) {
+				console.error(ex);
+			}
+			importTask.then(
+				() => setTimeout(() => (window.isImportingMindData = false), 0),
+				() => setTimeout(() => (window.isImportingMindData = false), 0)
+			);
+			return importTask;
+		}
+
 		function listenContentChange() {
 			if (listenContentChange.listened) return;
 			window.minder.on("contentchange", (e) => {
+				if (window.isImportingMindData) {
+					return;
+				}
 				if (window.fileExtName === ".svg") {
 					window.minder.exportData("svg").then((data) => {
 						window.vscode.postMessage({
@@ -45,28 +73,12 @@ angular
 				window.fileExtName = extName;
 
 				switch (command) {
-					case "import": {
-						let importTask = Promise.resolve();
-						try {
-							importTask = importTask.then(() => {
-								const importData = window.message.importData;
-								if (extName === ".svg") {
-									return new Promise((resolve) => {
-										// 可能出现格式不正确内部抛异常
-										window.minder
-											.importData("svg", importData)
-											.then(resolve, resolve);
-									});
-								} else {
-									// 可能出现格式不正确内部抛异常
-									window.minder.importJson(
-										JSON.parse(importData || "{}")
-									);
-								}
-							});
-						} catch (ex) {
-							console.error(ex);
-						}
+					case "import":
+					case "reload": {
+						const importTask = importMindData(
+							window.message.importData,
+							extName
+						);
 						importTask.then(listenContentChange, listenContentChange);
 						break;
 					}

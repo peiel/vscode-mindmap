@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 export declare class MindEditorProvider implements vscode.CustomEditorProvider {
     context: vscode.ExtensionContext;
+    private readonly _activeDocumentWrites;
+    private readonly _lastInternalWriteSignatures;
     constructor(context: vscode.ExtensionContext);
     static register(context: vscode.ExtensionContext): vscode.Disposable;
     revertCustomDocument(document: vscode.CustomDocument, cancellation: vscode.CancellationToken): Thenable<void>;
@@ -11,8 +13,17 @@ export declare class MindEditorProvider implements vscode.CustomEditorProvider {
     openCustomDocument(uri: vscode.Uri): Promise<vscode.CustomDocument>;
     saveCustomDocument(document: vscode.CustomDocument): Thenable<void>;
     resolveCustomEditor(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel): Promise<void>;
+    private watchDocumentFile;
+    private reloadDocumentFromDisk;
+    private getContentForReload;
+    private delay;
     private notifyExternalExtensions;
     private updateDocument;
+    private shouldIgnoreFileChange;
+    private beginInternalWrite;
+    private endInternalWrite;
+    private rememberInternalWrite;
+    private getFileSignature;
     private getContent;
     get extensionChannels(): any[];
 }

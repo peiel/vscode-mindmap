@@ -14,6 +14,9 @@ const matchableFileTypes: string[] = ['xmind', 'km', 'svg'];
 const viewType = 'vscode-mindmap.editor';
 
 export class MindEditorProvider implements vscode.CustomEditorProvider {
+	private readonly _activeDocumentWrites = new Map<string, number>();
+	private readonly _lastInternalWriteSignatures = new Map<string, string>();
+
 	constructor(public context: vscode.ExtensionContext) {
 		this.context = context;
 	}
@@ -90,11 +93,13 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		}
 		const importData = await this.getContent(document);
 		const panel = webviewPanel;
+		const disposables: vscode.Disposable[] = [];
 		panel.webview.options = {
 			enableScripts: true,
 			localResourceRoots: [vscode.Uri.file(path.join(this.context.extensionPath, 'webui'))],
 		};
 		panel.webview.html = html;
+		disposables.push(this.watchDocumentFile(document, panel, extName));
 		panel.webview.onDidReceiveMessage(
 			async (message: any) => {
 				switch (message.command) {
@@ -107,14 +112,14 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 						return;
 					case 'save':
 						try {
-							this.updateDocument(document, message, true);
+							await this.updateDocument(document, message);
 						} catch (ex) {
 							console.error(ex);
 						}
 						return;
 					case 'draft':
 						try {
-							this.updateDocument(document, message, false);
+							await this.updateDocument(document, message);
 						} catch (ex) {
 							console.error(ex);
 						}
@@ -266,16 +271,95 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 				}
 			},
 			undefined,
-			this.context.subscriptions
+			disposables
 		);
 
 		panel.onDidDispose(
 			() => {
-				// emit event to webview
+				disposables.forEach(disposable => disposable.dispose());
+				this._activeDocumentWrites.delete(fileName);
+				this._lastInternalWriteSignatures.delete(fileName);
 			},
 			null,
 			this.context.subscriptions
 		);
+	}
+
+	private watchDocumentFile(
+		document: vscode.CustomDocument,
+		panel: vscode.WebviewPanel,
+		extName: string
+	): vscode.Disposable {
+		const filePath = document.uri.fsPath;
+		const watcher = vscode.workspace.createFileSystemWatcher(
+			new vscode.RelativePattern(path.dirname(filePath), path.basename(filePath)),
+			false,
+			false,
+			true
+		);
+		let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+
+		const scheduleReload = () => {
+			if (this.shouldIgnoreFileChange(filePath)) {
+				return;
+			}
+			if (reloadTimer) {
+				clearTimeout(reloadTimer);
+			}
+			reloadTimer = setTimeout(async () => {
+				reloadTimer = undefined;
+				if (this.shouldIgnoreFileChange(filePath)) {
+					return;
+				}
+				try {
+					await this.reloadDocumentFromDisk(document, panel, extName);
+				} catch (ex) {
+					console.error(ex);
+				}
+			}, 150);
+		};
+
+		const changeDisposable = watcher.onDidChange(scheduleReload);
+		const createDisposable = watcher.onDidCreate(scheduleReload);
+
+		return new vscode.Disposable(() => {
+			if (reloadTimer) {
+				clearTimeout(reloadTimer);
+			}
+			changeDisposable.dispose();
+			createDisposable.dispose();
+			watcher.dispose();
+		});
+	}
+
+	private async reloadDocumentFromDisk(
+		document: vscode.CustomDocument,
+		panel: vscode.WebviewPanel,
+		extName: string
+	) {
+		const importData = await this.getContentForReload(document);
+		await panel.webview.postMessage({
+			command: 'reload',
+			importData,
+			extName,
+		});
+	}
+
+	private async getContentForReload(document: vscode.CustomDocument) {
+		let lastError: unknown;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			try {
+				return await this.getContent(document, true);
+			} catch (error) {
+				lastError = error;
+				await this.delay(100);
+			}
+		}
+		throw lastError;
+	}
+
+	private delay(timeout: number): Promise<void> {
+		return new Promise(resolve => setTimeout(resolve, timeout));
 	}
 
 	private notifyExternalExtensions(message: any) {
@@ -289,22 +373,71 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		message: {
 			command: string;
 			exportData: string;
-		},
-		save?: boolean
-	) {
-		const extName = path.extname(document.uri.fsPath).toLowerCase();
-		if (extName == '.xmind') {
-			let data = JSON.parse(message.exportData)
-			// json转xmind
-			parser.JSONToXmind(data, document.uri.fsPath).then((data: any) => {
-				console.log("data", data)
-			})
+		}
+	): Thenable<void> {
+		const filePath = document.uri.fsPath;
+		this.beginInternalWrite(filePath);
+		return Promise.resolve().then(async () => {
+			const extName = path.extname(filePath).toLowerCase();
+			if (extName == '.xmind') {
+				let data = JSON.parse(message.exportData)
+				// json转xmind
+				await parser.JSONToXmind(data, filePath)
+			} else {
+				fs.writeFileSync(filePath, message.exportData)
+			}
+			this.rememberInternalWrite(filePath);
+		}).finally(() => {
+			this.endInternalWrite(filePath);
+		});
+	}
+
+	private shouldIgnoreFileChange(filePath: string): boolean {
+		if ((this._activeDocumentWrites.get(filePath) || 0) > 0) {
+			return true;
+		}
+		const lastInternalWriteSignature = this._lastInternalWriteSignatures.get(filePath);
+		if (!lastInternalWriteSignature) {
+			return false;
+		}
+		const currentSignature = this.getFileSignature(filePath);
+		if (currentSignature && currentSignature == lastInternalWriteSignature) {
+			return true;
+		}
+		this._lastInternalWriteSignatures.delete(filePath);
+		return false;
+	}
+
+	private beginInternalWrite(filePath: string) {
+		this._activeDocumentWrites.set(filePath, (this._activeDocumentWrites.get(filePath) || 0) + 1);
+	}
+
+	private endInternalWrite(filePath: string) {
+		const activeWrites = (this._activeDocumentWrites.get(filePath) || 0) - 1;
+		if (activeWrites > 0) {
+			this._activeDocumentWrites.set(filePath, activeWrites);
 		} else {
-			fs.writeFileSync(document.uri.fsPath, message.exportData)
+			this._activeDocumentWrites.delete(filePath);
 		}
 	}
 
-	private async getContent(document: vscode.CustomDocument) {
+	private rememberInternalWrite(filePath: string) {
+		const signature = this.getFileSignature(filePath);
+		if (signature) {
+			this._lastInternalWriteSignatures.set(filePath, signature);
+		}
+	}
+
+	private getFileSignature(filePath: string): string | undefined {
+		try {
+			const stat = fs.statSync(filePath);
+			return `${stat.mtimeMs}:${stat.size}`;
+		} catch (ex) {
+			return undefined;
+		}
+	}
+
+	private async getContent(document: vscode.CustomDocument, throwOnXmindError = false) {
 		const extName = path.extname(document.uri.fsPath).toLowerCase();
 		let result = '';
 		switch (extName) {
@@ -316,6 +449,9 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 					let data = await parser.xmindToJSON(document.uri.fsPath)
 					result = JSON.stringify(data) || '{}';
 				} catch (error) {
+					if (throwOnXmindError) {
+						throw error;
+					}
 					result = '{}';
 				}
 				break;
