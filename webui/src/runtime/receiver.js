@@ -100,7 +100,7 @@ define(function(require, exports, module) {
         };
 
         function isMacOsHideShortcut(e) {
-            if (!e.metaKey || e.ctrlKey || e.shiftKey) {
+            if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
                 return false;
             }
             var key = e.key && e.key.toLowerCase();
@@ -108,8 +108,19 @@ define(function(require, exports, module) {
             return key === 'h' || keyCode === 72;
         }
 
+        function hideMacOsApplication(e) {
+            if (window.vscode && typeof window.vscode.postMessage == 'function') {
+                window.vscode.postMessage({
+                    command: 'hideApplication'
+                });
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }
+
         function dispatchKeyEvent(e) {
             if (isMacOsHideShortcut(e)) {
+                hideMacOsApplication(e);
                 return;
             }
             e.is = function(keyExpression) {

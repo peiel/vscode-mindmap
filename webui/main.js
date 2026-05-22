@@ -128,6 +128,20 @@ angular
 			listenContentChange.listened = true;
 		}
 
+		function isMacOsHideShortcut(e) {
+			const keyCode = e.keyCode || e.which || e.charCode;
+			const key = e.key && e.key.toLowerCase();
+			return e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (key === "h" || keyCode === 72);
+		}
+
+		function hideApplication(e) {
+			window.vscode.postMessage({
+				command: "hideApplication",
+			});
+			e.preventDefault();
+			e.stopPropagation();
+		}
+
 		$scope.initEditor = function (editor, minder) {
 			window.editor = editor;
 			window.minder = minder;
@@ -154,12 +168,16 @@ angular
 			});
 
 			window.addEventListener("keydown", (e) => {
+				if (isMacOsHideShortcut(e)) {
+					hideApplication(e);
+					return;
+				}
 				const keyCode = e.keyCode || e.which || e.charCode;
 				const ctrlKey = e.ctrlKey || e.metaKey;
 				if (ctrlKey && keyCode === 83) {
 					saveCurrentDocument();
 				}
-			});
+			}, true);
 
 			window.minder.on("click", (e) => {
 				try {

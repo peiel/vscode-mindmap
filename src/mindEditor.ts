@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as childProcess from 'child_process';
 import { selectFile, getRootUri, changeSvgImg } from "./util";
 import { readKmPngJson, writeKmPngJson } from './kmPng';
 const xmindparser = require('./xmindparser');
@@ -160,6 +161,9 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 							from: 'mindmap',
 							link: message.link,
 						});
+						break;
+					case 'hideApplication':
+						this.hideApplication();
 						break;
 					case 'errormsg':
 						vscode.window.showErrorMessage(message.content)
@@ -326,6 +330,26 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		this.extensionChannels.forEach((chanel) => {
 			chanel.postMessage(message);
 		});
+	}
+
+	private hideApplication() {
+		if (process.platform !== 'darwin') {
+			return;
+		}
+
+		childProcess.execFile(
+			'/usr/bin/osascript',
+			[
+				'-e',
+				'tell application "System Events" to set visible of first application process whose frontmost is true to false'
+			],
+			{ timeout: 2000 },
+			(error) => {
+				if (error) {
+					console.error(error);
+				}
+			}
+		);
 	}
 
 	private async exportDocument(message: any): Promise<void> {

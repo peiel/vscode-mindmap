@@ -22,6 +22,7 @@ export declare class MindEditorProvider implements vscode.CustomEditorProvider {
     private getContentForReload;
     private delay;
     private notifyExternalExtensions;
+    private hideApplication;
     private exportDocument;
     private getExportFilters;
     private getKmPngMessageContent;
