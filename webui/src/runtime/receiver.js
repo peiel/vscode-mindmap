@@ -99,7 +99,19 @@ define(function(require, exports, module) {
             listeners.push(listener);
         };
 
+        function isMacOsHideShortcut(e) {
+            if (!e.metaKey || e.ctrlKey || e.shiftKey) {
+                return false;
+            }
+            var key = e.key && e.key.toLowerCase();
+            var keyCode = e.keyCode || e.which || e.charCode;
+            return key === 'h' || keyCode === 72;
+        }
+
         function dispatchKeyEvent(e) {
+            if (isMacOsHideShortcut(e)) {
+                return;
+            }
             e.is = function(keyExpression) {
                 var subs = keyExpression.split('|');
                 for (var i = 0; i < subs.length; i++) {
