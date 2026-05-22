@@ -38,28 +38,96 @@ angular
 			return importTask;
 		}
 
+		function getCurrentMindJson() {
+			return JSON.stringify(window.minder.exportJson(), null, 4);
+		}
+
+		let documentVersion = 0;
+
+		function bumpDocumentVersion() {
+			documentVersion += 1;
+			return documentVersion;
+		}
+
+		function postCurrentKmPng(command, version) {
+			const json = getCurrentMindJson();
+			return window.minder.exportData("svg").then((svg) => {
+				window.vscode.postMessage({
+					command,
+					exportData: json,
+					svgData: svg,
+					documentVersion: version,
+				});
+			});
+		}
+
+		function scheduleKmPngDraft(version) {
+			if (window.kmPngDraftTimer) {
+				clearTimeout(window.kmPngDraftTimer);
+			}
+			window.kmPngDraftTimer = setTimeout(() => {
+				window.kmPngDraftTimer = null;
+				postCurrentKmPng("draft", version);
+			}, 500);
+		}
+
+		function flushKmPngDraft(version) {
+			if (window.kmPngDraftTimer) {
+				clearTimeout(window.kmPngDraftTimer);
+				window.kmPngDraftTimer = null;
+			}
+			return postCurrentKmPng("save", version);
+		}
+
+		function saveCurrentDocument() {
+			const version = documentVersion;
+			if (window.fileExtName === ".km.png") {
+				flushKmPngDraft(version);
+			} else if (window.fileExtName === ".svg") {
+				window.minder.exportData("svg").then((data) => {
+					window.vscode.postMessage({
+						command: "save",
+						exportData: data,
+						documentVersion: version,
+					});
+				});
+			} else {
+				window.vscode.postMessage({
+					command: "save",
+					exportData: getCurrentMindJson(),
+					documentVersion: version,
+				});
+			}
+		}
+
 		function listenContentChange() {
 			if (listenContentChange.listened) return;
 			window.minder.on("contentchange", (e) => {
 				if (window.isImportingMindData) {
 					return;
 				}
-				if (window.fileExtName === ".svg") {
+				const version = bumpDocumentVersion();
+				if (window.fileExtName === ".km.png") {
+					scheduleKmPngDraft(version);
+				} else if (window.fileExtName === ".svg") {
 					window.minder.exportData("svg").then((data) => {
 						window.vscode.postMessage({
 							command: "draft",
 							exportData: data,
+							documentVersion: version,
 						});
 					});
 				} else {
 					window.vscode.postMessage({
 						command: "draft",
-						exportData: JSON.stringify(window.minder.exportJson(), null, 4),
+						exportData: getCurrentMindJson(),
+						documentVersion: version,
 					});
 				}
 			});
 			listenContentChange.listened = true;
 		}
+
 		$scope.initEditor = function (editor, minder) {
 			window.editor = editor;
 			window.minder = minder;
@@ -89,10 +157,7 @@ angular
 				const keyCode = e.keyCode || e.which || e.charCode;
 				const ctrlKey = e.ctrlKey || e.metaKey;
 				if (ctrlKey && keyCode === 83) {
-					window.vscode.postMessage({
-						command: "save",
-						exportData: JSON.stringify(window.minder.exportJson(), null, 4),
-					});
+					saveCurrentDocument();
 				}
 			});
 
@@ -129,6 +194,20 @@ angular
 		var $this = $(this),
 			type = $this.data("type"),
 			exportType;
+		if (type === "km-png") {
+			editor.minder.exportData("svg").then(function (svg) {
+				window.vscode.postMessage({
+					command: "export",
+					filename: $("#node_text1").text(),
+					type: type,
+					content: {
+						json: JSON.stringify(editor.minder.exportJson(), null, 4),
+						svg: svg,
+					},
+				});
+			});
+			return;
+		}
 		switch (type) {
 			case "km":
 				exportType = "json";

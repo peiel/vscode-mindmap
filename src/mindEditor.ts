@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { selectFile, getRootUri, changeSvgImg } from "./util";
+import { readKmPngJson, writeKmPngJson } from './kmPng';
 const xmindparser = require('./xmindparser');
 let parser = new xmindparser()
 
@@ -9,13 +10,41 @@ const { Resvg, initWasm } = require('./wasm')
 const index_bg = fs.readFileSync(path.join(__dirname, '../webui/resvg-js/index_bg.wasm'))
 initWasm(index_bg)
 const fontPath = path.join(__dirname, '../webui/resvg-js/fonts/Alibaba_PuHuiTi_2.0_45_Light_45_Light.ttf')
+const fontBuffer = fs.readFileSync(path.resolve(fontPath))
 
-const matchableFileTypes: string[] = ['xmind', 'km', 'svg'];
+type MindMapFileType = '.xmind' | '.km' | '.svg' | '.km.png' | '';
+const ExportType = {
+	Xmind: 'xmind',
+	Png: 'png',
+	KmPng: 'km-png',
+	Json: 'json',
+} as const;
+type ExportType = typeof ExportType[keyof typeof ExportType];
 const viewType = 'vscode-mindmap.editor';
+
+function getMindMapFileType(filePath: string): MindMapFileType {
+	const normalizedPath = filePath.toLowerCase();
+	if (normalizedPath.endsWith('.km.png')) {
+		return '.km.png';
+	}
+	const extName = path.extname(normalizedPath);
+	if (extName == '.xmind' || extName == '.km' || extName == '.svg') {
+		return extName;
+	}
+	return '';
+}
+
+function getExportExtension(type: string): string {
+	return type == ExportType.KmPng ? 'km.png' : type;
+}
 
 export class MindEditorProvider implements vscode.CustomEditorProvider {
 	private readonly _activeDocumentWrites = new Map<string, number>();
 	private readonly _lastInternalWriteSignatures = new Map<string, string>();
+	private readonly _documentWriteQueues = new Map<string, Promise<void>>();
+	private readonly _lastWrittenDocumentVersions = new Map<string, number>();
+	private readonly _blockedKmPngWrites = new Set<string>();
+	private readonly _shownKmPngMessages = new Set<string>();
 
 	constructor(public context: vscode.ExtensionContext) {
 		this.context = context;
@@ -87,8 +116,8 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		html = html.replace(/\$\{vscode_upload_url\}/g, uploadUrl);
 
 		const fileName = document.uri.fsPath;
-		const extName = path.extname(fileName);
-		if (!matchableFileTypes.includes(extName.slice(1))) {
+		const extName = getMindMapFileType(fileName);
+		if (!extName) {
 			return;
 		}
 		const importData = await this.getContent(document);
@@ -115,6 +144,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 							await this.updateDocument(document, message);
 						} catch (ex) {
 							console.error(ex);
+							vscode.window.showErrorMessage('save error!');
 						}
 						return;
 					case 'draft':
@@ -185,86 +215,12 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 
 						break;
 					case 'export':
-						let filters: any = { 'All Files': ['*'] }
-						if (message.type == 'xmind') {
-							filters['Text Files'] = ['xmind']
-						} else if (message.type == 'png') {
-							filters['Images Files'] = ['png']
+						try {
+							await this.exportDocument(message);
+						} catch (ex) {
+							console.error(ex);
+							vscode.window.showErrorMessage('export error!');
 						}
-
-						// 弹出保存对话框
-						const rootUri = getRootUri();
-						rootUri && vscode.window.showSaveDialog({
-							defaultUri: vscode.Uri.file(path.join(rootUri.fsPath, message.filename + '.' + message.type)), // 设置默认文件名
-							filters: filters
-						}).then(async uri => {
-							if (uri) {
-								// 处理用户选择的文件路径
-								const filePath = uri.fsPath;
-								if (message.type == 'xmind') {
-									let data = JSON.parse(message.content)
-									//脑图 json转xmind 浏览器返回blob node返回pathurl
-									parser.JSONToXmind(data, filePath).then((data: any) => {
-										console.log("data", data)
-									})
-								} else if (message.type == 'png') {
-									let new_svg = await changeSvgImg(message.content)
-									if (new_svg) {
-										const imageBackgroundColor = mindmapConfig.get<string>('imageBackgroundColor', '#ffffff');
-										const imageScaleSize = mindmapConfig.get<number>('imageScaleSize', 2);
-
-										const sourceBuffer = fs.readFileSync(path.resolve(fontPath))
-										const opts = {
-											background: imageBackgroundColor,
-											fitTo: {
-												mode: 'zoom',
-												value: imageScaleSize,
-											},
-											font: {
-												fontBuffers: [sourceBuffer],
-												// fontFiles: [font], // Load custom fonts.
-												loadSystemFonts: false, // It will be faster to disable loading system fonts.
-												// defaultFontFamily: 'Source Han Serif CN Light',
-											},
-										}
-										const resvg = new Resvg(new_svg, opts)
-										const pngData = resvg.render()
-										const pngBuffer = pngData.asPng()
-										await fs.writeFileSync(filePath, pngBuffer)
-									}
-
-									// sharp强大 但有系统兼容问题暂不采用
-									// try {
-									//     const sharp = require("sharp");
-									//     let new_svg = await changeSvgImg(message.content)
-									//     if (new_svg) {
-									//         const sourceBuffer = Buffer.from(new_svg, 'utf-8');
-									//         const imageScaleSize = mindmapConfig.get<number>('imageScaleSize', 200);
-									//         const imageBackgroundColor = mindmapConfig.get<string>('imageBackgroundColor', '#ffffff');
-									//         sharp(sourceBuffer, {
-									//             density: imageScaleSize // 设置导出像素
-									//         })
-									//             .png({ quality: 90 })
-									//             .flatten({ background: imageBackgroundColor })
-									//             .toFile(filePath, (err: any, info: any) => {
-									//                 if (err) {
-									//                     return;
-									//                 }
-									//             });
-									//     } else {
-									//         vscode.window.showErrorMessage('export error!')
-									//     }
-									// } catch (error) {
-									//     //降级处理有的操作系统不支持sharp 则导出普通图片
-									// }
-								} else if (message.type == 'json') {
-									//格式化json
-									fs.writeFileSync(filePath, JSON.stringify(JSON.parse(message.content), null, "\t"), 'utf-8')
-								} else {
-									fs.writeFileSync(filePath, message.content, 'utf-8')
-								}
-							}
-						});
 						break;
 					default:
 						break;
@@ -279,6 +235,10 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 				disposables.forEach(disposable => disposable.dispose());
 				this._activeDocumentWrites.delete(fileName);
 				this._lastInternalWriteSignatures.delete(fileName);
+				this._documentWriteQueues.delete(fileName);
+				this._lastWrittenDocumentVersions.delete(fileName);
+				this._blockedKmPngWrites.delete(fileName);
+				this.clearKmPngMessages(fileName);
 			},
 			null,
 			this.context.subscriptions
@@ -368,28 +328,188 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		});
 	}
 
+	private async exportDocument(message: any): Promise<void> {
+		const rootUri = getRootUri();
+		if (!rootUri) {
+			return;
+		}
+
+		const exportExtension = getExportExtension(message.type);
+		const exportFilename = message.filename || 'mindmap';
+		const uri = await vscode.window.showSaveDialog({
+			defaultUri: vscode.Uri.file(path.join(rootUri.fsPath, `${exportFilename}.${exportExtension}`)),
+			filters: this.getExportFilters(message.type)
+		});
+		if (!uri) {
+			return;
+		}
+
+		const filePath = uri.fsPath;
+		if (message.type == ExportType.Xmind) {
+			let data = JSON.parse(message.content)
+			//脑图 json转xmind 浏览器返回blob node返回pathurl
+			await parser.JSONToXmind(data, filePath)
+		} else if (message.type == ExportType.Png) {
+			const pngBuffer = await this.renderSvgToPngBuffer(message.content);
+			fs.writeFileSync(filePath, pngBuffer)
+		} else if (message.type == ExportType.KmPng) {
+			const content = this.getKmPngMessageContent(message.content);
+			await this.writeKmPngDocument(filePath, content.json, content.svg)
+		} else if (message.type == ExportType.Json) {
+			//格式化json
+			fs.writeFileSync(filePath, JSON.stringify(JSON.parse(message.content), null, "\t"), 'utf-8')
+		} else {
+			fs.writeFileSync(filePath, message.content, 'utf-8')
+		}
+	}
+
+	private getExportFilters(type: string): { [name: string]: string[] } {
+		let filters: { [name: string]: string[] } = { 'All Files': ['*'] }
+		if (type == ExportType.Xmind) {
+			filters['Text Files'] = ['xmind']
+		} else if (type == ExportType.Png) {
+			filters['Images Files'] = ['png']
+		} else if (type == ExportType.KmPng) {
+			filters['Editable MindMap PNG'] = ['km.png']
+			filters['Images Files'] = ['png']
+		}
+		return filters;
+	}
+
+	private getKmPngMessageContent(content: any): { json: string; svg: string } {
+		if (!content || typeof content !== 'object' || typeof content.json !== 'string' || typeof content.svg !== 'string') {
+			throw new Error('Invalid km.png export content.');
+		}
+		return content;
+	}
+
+	private async writeKmPngDocument(filePath: string, jsonContent: string, svgContent: string): Promise<void> {
+		JSON.parse(jsonContent);
+		const pngBuffer = await this.renderSvgToPngBuffer(svgContent);
+		fs.writeFileSync(filePath, writeKmPngJson(pngBuffer, jsonContent))
+	}
+
+	private async renderSvgToPngBuffer(svgContent: string): Promise<Buffer> {
+		let new_svg = await changeSvgImg(svgContent)
+		if (!new_svg) {
+			throw new Error('Failed to convert SVG before PNG export.');
+		}
+
+		const mindmapConfig: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration("MindMap")
+		const imageBackgroundColor = mindmapConfig.get<string>('imageBackgroundColor', '#ffffff');
+		const imageScaleSize = mindmapConfig.get<number>('imageScaleSize', 2);
+
+		const opts = {
+			background: imageBackgroundColor,
+			fitTo: {
+				mode: 'zoom',
+				value: imageScaleSize,
+			},
+			font: {
+				fontBuffers: [fontBuffer],
+				// fontFiles: [font], // Load custom fonts.
+				loadSystemFonts: false, // It will be faster to disable loading system fonts.
+				// defaultFontFamily: 'Source Han Serif CN Light',
+			},
+		}
+		const resvg = new Resvg(new_svg, opts)
+		const pngData = resvg.render()
+		const pngBuffer = pngData.asPng()
+		return Buffer.from(pngBuffer);
+	}
+
 	private updateDocument(
 		document: vscode.CustomDocument,
 		message: {
 			command: string;
 			exportData: string;
+			svgData?: string;
+			documentVersion?: number;
 		}
 	): Thenable<void> {
 		const filePath = document.uri.fsPath;
-		this.beginInternalWrite(filePath);
-		return Promise.resolve().then(async () => {
-			const extName = path.extname(filePath).toLowerCase();
-			if (extName == '.xmind') {
-				let data = JSON.parse(message.exportData)
-				// json转xmind
-				await parser.JSONToXmind(data, filePath)
-			} else {
-				fs.writeFileSync(filePath, message.exportData)
+		const previousWrite = this._documentWriteQueues.get(filePath) || Promise.resolve();
+		const queuedWrite = previousWrite
+			.catch(() => undefined)
+			.then(async () => {
+				if (this.shouldSkipStaleDraft(filePath, message)) {
+					return;
+				}
+
+				this.beginInternalWrite(filePath);
+				try {
+					await this.writeDocument(filePath, message);
+					this.rememberInternalWrite(filePath);
+					this.rememberWrittenDocumentVersion(filePath, message);
+				} finally {
+					this.endInternalWrite(filePath);
+				}
+			});
+
+		this._documentWriteQueues.set(filePath, queuedWrite);
+		const cleanupWriteQueue = () => {
+			if (this._documentWriteQueues.get(filePath) === queuedWrite) {
+				this._documentWriteQueues.delete(filePath);
 			}
-			this.rememberInternalWrite(filePath);
-		}).finally(() => {
-			this.endInternalWrite(filePath);
-		});
+		};
+		queuedWrite.then(cleanupWriteQueue, cleanupWriteQueue);
+		return queuedWrite;
+	}
+
+	private async writeDocument(
+		filePath: string,
+		message: {
+			command: string;
+			exportData: string;
+			svgData?: string;
+		}
+	): Promise<void> {
+		const extName = getMindMapFileType(filePath);
+		if (extName == '.xmind') {
+			let data = JSON.parse(message.exportData)
+			// json转xmind
+			await parser.JSONToXmind(data, filePath)
+		} else if (extName == '.km.png') {
+			if (this._blockedKmPngWrites.has(filePath)) {
+				throw new Error('Current km.png has unreadable mindmap data. Refusing to overwrite it.');
+			}
+			if (!message.svgData) {
+				throw new Error('Missing SVG data for km.png.');
+			}
+			await this.writeKmPngDocument(filePath, message.exportData, message.svgData)
+		} else {
+			fs.writeFileSync(filePath, message.exportData)
+		}
+	}
+
+	private shouldSkipStaleDraft(
+		filePath: string,
+		message: {
+			command: string;
+			documentVersion?: number;
+		}
+	): boolean {
+		if (message.command !== 'draft' || typeof message.documentVersion !== 'number') {
+			return false;
+		}
+
+		const lastWrittenDocumentVersion = this._lastWrittenDocumentVersions.get(filePath);
+		return typeof lastWrittenDocumentVersion === 'number' && message.documentVersion <= lastWrittenDocumentVersion;
+	}
+
+	private rememberWrittenDocumentVersion(
+		filePath: string,
+		message: {
+			documentVersion?: number;
+		}
+	) {
+		if (typeof message.documentVersion !== 'number') {
+			return;
+		}
+		const lastWrittenDocumentVersion = this._lastWrittenDocumentVersions.get(filePath);
+		if (typeof lastWrittenDocumentVersion !== 'number' || message.documentVersion > lastWrittenDocumentVersion) {
+			this._lastWrittenDocumentVersions.set(filePath, message.documentVersion);
+		}
 	}
 
 	private shouldIgnoreFileChange(filePath: string): boolean {
@@ -437,12 +557,71 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		}
 	}
 
+	private getKmPngContent(filePath: string, throwOnError: boolean): string {
+		const result = readKmPngJson(filePath);
+		if (result.kind == 'found') {
+			try {
+				JSON.parse(result.json);
+				this._blockedKmPngWrites.delete(filePath);
+				return result.json;
+			} catch (error) {
+				this._blockedKmPngWrites.add(filePath);
+				if (throwOnError) {
+					throw error;
+				}
+				this.showKmPngMessage(filePath, 'error', '当前 km.png 的脑图数据损坏，将以空脑图打开，但不会自动保存以避免覆盖原文件。');
+				return '{}';
+			}
+		}
+		if (result.kind == 'empty') {
+			this._blockedKmPngWrites.delete(filePath);
+			return '{}';
+		}
+		if (result.kind == 'missing') {
+			this._blockedKmPngWrites.delete(filePath);
+			this.showKmPngMessage(filePath, 'warning', '当前 PNG 不包含脑图数据，将以空脑图打开。编辑后会保存为可编辑 km.png。');
+			return '{}';
+		}
+		if (result.kind == 'invalid') {
+			this._blockedKmPngWrites.add(filePath);
+			if (throwOnError) {
+				throw new Error('Invalid km.png file.');
+			}
+			this.showKmPngMessage(filePath, 'error', '当前文件不是有效 PNG，无法读取脑图数据，也不会自动保存以避免覆盖原文件。');
+			return '{}';
+		}
+		return '{}';
+	}
+
+	private showKmPngMessage(filePath: string, type: 'warning' | 'error', message: string) {
+		const key = `${filePath}:${type}:${message}`;
+		if (this._shownKmPngMessages.has(key)) {
+			return;
+		}
+		this._shownKmPngMessages.add(key);
+		if (type == 'warning') {
+			vscode.window.showWarningMessage(message);
+		} else {
+			vscode.window.showErrorMessage(message);
+		}
+	}
+
+	private clearKmPngMessages(filePath: string) {
+		const prefix = `${filePath}:`;
+		Array.from(this._shownKmPngMessages)
+			.filter((key) => key.startsWith(prefix))
+			.forEach((key) => this._shownKmPngMessages.delete(key));
+	}
+
 	private async getContent(document: vscode.CustomDocument, throwOnXmindError = false) {
-		const extName = path.extname(document.uri.fsPath).toLowerCase();
+		const extName = getMindMapFileType(document.uri.fsPath);
 		let result = '';
 		switch (extName) {
 			case '.km':
 				result = fs.readFileSync(document.uri.fsPath, 'utf-8') || '{}';
+				break;
+			case '.km.png':
+				result = this.getKmPngContent(document.uri.fsPath, throwOnXmindError);
 				break;
 			case '.xmind':
 				try {

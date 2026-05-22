@@ -22,7 +22,7 @@ angular.module('kityminderEditor').run(['$templateCache', function($templateCach
 
 
   $templateCache.put('ui/directive/exportMore/exportMore.html',
-    "<div id=\"more-box\"><ul><li class=\"export\" data-type=\"km\">{{ 'txt1' | lang: 'export'}} km</li><li class=\"export\" data-type=\"xmind\">{{ 'txt1' | lang: 'export'}} xmind</li><li class=\"export\" data-type=\"json\">{{ 'txt1' | lang: 'export'}} json</li><li class=\"export\" data-type=\"md\">{{ 'txt1' | lang: 'export'}} md</li><li class=\"export\" data-type=\"txt\">{{ 'txt1' | lang: 'export'}} txt</li><li class=\"export\" data-type=\"png\">{{ 'txt1' | lang: 'export'}} png</li><li class=\"export\" data-type=\"svg\">{{ 'txt1' | lang: 'export'}} svg</li><li class=\"import upload-box\" title=\"{{ 'txt2' | lang: 'export'}} km、md、txt、json、xmind\" data-type=\"json\">{{ 'txt2' | lang: 'export'}}</li></ul></div>"
+    "<div id=\"more-box\"><ul><li class=\"export\" data-type=\"km\">{{ 'txt1' | lang: 'export'}} km</li><li class=\"export\" data-type=\"xmind\">{{ 'txt1' | lang: 'export'}} xmind</li><li class=\"export\" data-type=\"json\">{{ 'txt1' | lang: 'export'}} json</li><li class=\"export\" data-type=\"md\">{{ 'txt1' | lang: 'export'}} md</li><li class=\"export\" data-type=\"txt\">{{ 'txt1' | lang: 'export'}} txt</li><li class=\"export\" data-type=\"png\">{{ 'txt1' | lang: 'export'}} png</li><li class=\"export\" data-type=\"km-png\" title=\"Editable PNG mindmap\">{{ 'txt1' | lang: 'export'}} km.png</li><li class=\"export\" data-type=\"svg\">{{ 'txt1' | lang: 'export'}} svg</li><li class=\"import upload-box\" title=\"{{ 'txt2' | lang: 'export'}} km、md、txt、json、xmind\" data-type=\"json\">{{ 'txt2' | lang: 'export'}}</li></ul></div>"
   );
 
 

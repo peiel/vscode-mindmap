@@ -3,6 +3,10 @@ export declare class MindEditorProvider implements vscode.CustomEditorProvider {
     context: vscode.ExtensionContext;
     private readonly _activeDocumentWrites;
     private readonly _lastInternalWriteSignatures;
+    private readonly _documentWriteQueues;
+    private readonly _lastWrittenDocumentVersions;
+    private readonly _blockedKmPngWrites;
+    private readonly _shownKmPngMessages;
     constructor(context: vscode.ExtensionContext);
     static register(context: vscode.ExtensionContext): vscode.Disposable;
     revertCustomDocument(document: vscode.CustomDocument, cancellation: vscode.CancellationToken): Thenable<void>;
@@ -18,12 +22,23 @@ export declare class MindEditorProvider implements vscode.CustomEditorProvider {
     private getContentForReload;
     private delay;
     private notifyExternalExtensions;
+    private exportDocument;
+    private getExportFilters;
+    private getKmPngMessageContent;
+    private writeKmPngDocument;
+    private renderSvgToPngBuffer;
     private updateDocument;
+    private writeDocument;
+    private shouldSkipStaleDraft;
+    private rememberWrittenDocumentVersion;
     private shouldIgnoreFileChange;
     private beginInternalWrite;
     private endInternalWrite;
     private rememberInternalWrite;
     private getFileSignature;
+    private getKmPngContent;
+    private showKmPngMessage;
+    private clearKmPngMessages;
     private getContent;
     get extensionChannels(): any[];
 }

@@ -1,5 +1,4 @@
 /// <reference types="node" />
-/// <reference types="node" />
 import * as vscode from "vscode";
 export declare function getRootUri(): vscode.Uri | undefined;
 export declare function selectFile(options?: vscode.OpenDialogOptions): Promise<vscode.Uri | undefined>;
