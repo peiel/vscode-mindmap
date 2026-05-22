@@ -8,10 +8,8 @@ const xmindparser = require('./xmindparser');
 let parser = new xmindparser()
 
 const { Resvg, initWasm } = require('./wasm')
-const index_bg = fs.readFileSync(path.join(__dirname, '../webui/resvg-js/index_bg.wasm'))
-initWasm(index_bg)
+const wasmPath = path.join(__dirname, '../webui/resvg-js/index_bg.wasm')
 const fontPath = path.join(__dirname, '../webui/resvg-js/fonts/Alibaba_PuHuiTi_2.0_45_Light_45_Light.ttf')
-const fontBuffer = fs.readFileSync(path.resolve(fontPath))
 
 type MindMapFileType = '.xmind' | '.km' | '.svg' | '.km.png' | '';
 const ExportType = {
@@ -22,6 +20,52 @@ const ExportType = {
 } as const;
 type ExportType = typeof ExportType[keyof typeof ExportType];
 const viewType = 'vscode-mindmap.editor';
+const INTERNAL_WRITE_SIGNATURE_TTL_MS = 1000;
+
+type InternalWriteSignature = {
+	signature: string;
+	expiresAt: number;
+};
+
+type KmPngMessageContent = {
+	json: string;
+	svg: string;
+};
+
+type SaveDocumentMessage = {
+	command: 'save';
+	exportData: string;
+	svgData?: string;
+	documentVersion?: number;
+};
+
+type DraftDocumentMessage = {
+	command: 'draft';
+	exportData: string;
+	svgData?: string;
+	documentVersion?: number;
+};
+
+type UpdateDocumentMessage = SaveDocumentMessage | DraftDocumentMessage;
+
+type ExportDocumentMessage = {
+	command: 'export';
+	type: string;
+	filename?: string;
+	content: string | KmPngMessageContent;
+};
+
+type WebviewMessage =
+	| { command: 'loaded' }
+	| SaveDocumentMessage
+	| DraftDocumentMessage
+	| { command: 'clicklink'; link: string }
+	| { command: 'hideApplication' }
+	| { command: 'errormsg'; content: string }
+	| { command: 'importFile' }
+	| ExportDocumentMessage;
+
+let resvgResourcesPromise: Promise<{ fontBuffer: Buffer }> | undefined;
 
 function getMindMapFileType(filePath: string): MindMapFileType {
 	const normalizedPath = filePath.toLowerCase();
@@ -39,9 +83,28 @@ function getExportExtension(type: string): string {
 	return type == ExportType.KmPng ? 'km.png' : type;
 }
 
+function getResvgResources(): Promise<{ fontBuffer: Buffer }> {
+	if (!resvgResourcesPromise) {
+		resvgResourcesPromise = loadResvgResources().catch((error) => {
+			resvgResourcesPromise = undefined;
+			throw error;
+		});
+	}
+	return resvgResourcesPromise;
+}
+
+async function loadResvgResources(): Promise<{ fontBuffer: Buffer }> {
+	const [wasmBuffer, fontBuffer] = await Promise.all([
+		fs.promises.readFile(wasmPath),
+		fs.promises.readFile(path.resolve(fontPath)),
+	]);
+	await initWasm(wasmBuffer);
+	return { fontBuffer };
+}
+
 export class MindEditorProvider implements vscode.CustomEditorProvider {
 	private readonly _activeDocumentWrites = new Map<string, number>();
-	private readonly _lastInternalWriteSignatures = new Map<string, string>();
+	private readonly _lastInternalWriteSignatures = new Map<string, InternalWriteSignature>();
 	private readonly _documentWriteQueues = new Map<string, Promise<void>>();
 	private readonly _lastWrittenDocumentVersions = new Map<string, number>();
 	private readonly _blockedKmPngWrites = new Set<string>();
@@ -97,10 +160,8 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		const onDiskPath = vscode.Uri.file(path.join(this.context.extensionPath, 'webui', 'mindmap.html'));
 		const resourcePath = vscode.Uri.file(path.join(this.context.extensionPath, 'webui'));
 		const resourceRealPath = webviewPanel.webview.asWebviewUri(resourcePath);
-		const fileContent =
-			process.platform === 'win32'
-				? fs.readFileSync(onDiskPath.path.slice(1)).toString()
-				: fs.readFileSync(onDiskPath.path).toString();
+		const htmlPath = process.platform === 'win32' ? onDiskPath.path.slice(1) : onDiskPath.path;
+		const fileContent = await fs.promises.readFile(htmlPath, 'utf-8');
 
 		// 生成 CSP meta 标签
 		const cspSource = webviewPanel.webview.cspSource;
@@ -131,7 +192,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		panel.webview.html = html;
 		disposables.push(this.watchDocumentFile(document, panel, extName));
 		panel.webview.onDidReceiveMessage(
-			async (message: any) => {
+			async (message: WebviewMessage) => {
 				switch (message.command) {
 					case 'loaded':
 						panel.webview.postMessage({
@@ -208,7 +269,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 									});
 								})
 							} else {
-								let content: any = fs.readFileSync(importFileUri.fsPath, 'utf-8')
+								const content = await fs.promises.readFile(importFileUri.fsPath, 'utf-8')
 								panel.webview.postMessage({
 									command: 'importNewData',
 									content,
@@ -326,7 +387,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		return new Promise(resolve => setTimeout(resolve, timeout));
 	}
 
-	private notifyExternalExtensions(message: any) {
+	private notifyExternalExtensions(message: { type: 'clicklink'; from: 'mindmap'; link: string }) {
 		this.extensionChannels.forEach((chanel) => {
 			chanel.postMessage(message);
 		});
@@ -352,7 +413,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		);
 	}
 
-	private async exportDocument(message: any): Promise<void> {
+	private async exportDocument(message: ExportDocumentMessage): Promise<void> {
 		const rootUri = getRootUri();
 		if (!rootUri) {
 			return;
@@ -370,20 +431,32 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 
 		const filePath = uri.fsPath;
 		if (message.type == ExportType.Xmind) {
+			if (typeof message.content !== 'string') {
+				throw new Error('Invalid xmind export content.');
+			}
 			let data = JSON.parse(message.content)
 			//脑图 json转xmind 浏览器返回blob node返回pathurl
 			await parser.JSONToXmind(data, filePath)
 		} else if (message.type == ExportType.Png) {
+			if (typeof message.content !== 'string') {
+				throw new Error('Invalid png export content.');
+			}
 			const pngBuffer = await this.renderSvgToPngBuffer(message.content);
-			fs.writeFileSync(filePath, pngBuffer)
+			await fs.promises.writeFile(filePath, pngBuffer)
 		} else if (message.type == ExportType.KmPng) {
 			const content = this.getKmPngMessageContent(message.content);
 			await this.writeKmPngDocument(filePath, content.json, content.svg)
 		} else if (message.type == ExportType.Json) {
+			if (typeof message.content !== 'string') {
+				throw new Error('Invalid json export content.');
+			}
 			//格式化json
-			fs.writeFileSync(filePath, JSON.stringify(JSON.parse(message.content), null, "\t"), 'utf-8')
+			await fs.promises.writeFile(filePath, JSON.stringify(JSON.parse(message.content), null, "\t"), 'utf-8')
 		} else {
-			fs.writeFileSync(filePath, message.content, 'utf-8')
+			if (typeof message.content !== 'string') {
+				throw new Error('Invalid export content.');
+			}
+			await fs.promises.writeFile(filePath, message.content, 'utf-8')
 		}
 	}
 
@@ -400,17 +473,21 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		return filters;
 	}
 
-	private getKmPngMessageContent(content: any): { json: string; svg: string } {
-		if (!content || typeof content !== 'object' || typeof content.json !== 'string' || typeof content.svg !== 'string') {
+	private getKmPngMessageContent(content: unknown): KmPngMessageContent {
+		const maybeContent = content as Partial<KmPngMessageContent> | undefined;
+		if (!maybeContent || typeof maybeContent.json !== 'string' || typeof maybeContent.svg !== 'string') {
 			throw new Error('Invalid km.png export content.');
 		}
-		return content;
+		return {
+			json: maybeContent.json,
+			svg: maybeContent.svg,
+		};
 	}
 
 	private async writeKmPngDocument(filePath: string, jsonContent: string, svgContent: string): Promise<void> {
 		JSON.parse(jsonContent);
 		const pngBuffer = await this.renderSvgToPngBuffer(svgContent);
-		fs.writeFileSync(filePath, writeKmPngJson(pngBuffer, jsonContent))
+		await fs.promises.writeFile(filePath, await writeKmPngJson(pngBuffer, jsonContent))
 	}
 
 	private async renderSvgToPngBuffer(svgContent: string): Promise<Buffer> {
@@ -422,6 +499,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		const mindmapConfig: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration("MindMap")
 		const imageBackgroundColor = mindmapConfig.get<string>('imageBackgroundColor', '#ffffff');
 		const imageScaleSize = mindmapConfig.get<number>('imageScaleSize', 2);
+		const { fontBuffer } = await getResvgResources();
 
 		const opts = {
 			background: imageBackgroundColor,
@@ -444,12 +522,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 
 	private updateDocument(
 		document: vscode.CustomDocument,
-		message: {
-			command: string;
-			exportData: string;
-			svgData?: string;
-			documentVersion?: number;
-		}
+		message: UpdateDocumentMessage
 	): Thenable<void> {
 		const filePath = document.uri.fsPath;
 		const previousWrite = this._documentWriteQueues.get(filePath) || Promise.resolve();
@@ -482,11 +555,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 
 	private async writeDocument(
 		filePath: string,
-		message: {
-			command: string;
-			exportData: string;
-			svgData?: string;
-		}
+		message: UpdateDocumentMessage
 	): Promise<void> {
 		const extName = getMindMapFileType(filePath);
 		if (extName == '.xmind') {
@@ -502,16 +571,13 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 			}
 			await this.writeKmPngDocument(filePath, message.exportData, message.svgData)
 		} else {
-			fs.writeFileSync(filePath, message.exportData)
+			await fs.promises.writeFile(filePath, message.exportData)
 		}
 	}
 
 	private shouldSkipStaleDraft(
 		filePath: string,
-		message: {
-			command: string;
-			documentVersion?: number;
-		}
+		message: UpdateDocumentMessage
 	): boolean {
 		if (message.command !== 'draft' || typeof message.documentVersion !== 'number') {
 			return false;
@@ -523,9 +589,7 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 
 	private rememberWrittenDocumentVersion(
 		filePath: string,
-		message: {
-			documentVersion?: number;
-		}
+		message: UpdateDocumentMessage
 	) {
 		if (typeof message.documentVersion !== 'number') {
 			return;
@@ -544,8 +608,13 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		if (!lastInternalWriteSignature) {
 			return false;
 		}
+		if (lastInternalWriteSignature.expiresAt < Date.now()) {
+			this._lastInternalWriteSignatures.delete(filePath);
+			return false;
+		}
 		const currentSignature = this.getFileSignature(filePath);
-		if (currentSignature && currentSignature == lastInternalWriteSignature) {
+		if (currentSignature && currentSignature == lastInternalWriteSignature.signature) {
+			this._lastInternalWriteSignatures.delete(filePath);
 			return true;
 		}
 		this._lastInternalWriteSignatures.delete(filePath);
@@ -568,7 +637,10 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 	private rememberInternalWrite(filePath: string) {
 		const signature = this.getFileSignature(filePath);
 		if (signature) {
-			this._lastInternalWriteSignatures.set(filePath, signature);
+			this._lastInternalWriteSignatures.set(filePath, {
+				signature,
+				expiresAt: Date.now() + INTERNAL_WRITE_SIGNATURE_TTL_MS,
+			});
 		}
 	}
 
@@ -581,8 +653,8 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		}
 	}
 
-	private getKmPngContent(filePath: string, throwOnError: boolean): string {
-		const result = readKmPngJson(filePath);
+	private async getKmPngContent(filePath: string, throwOnError: boolean): Promise<string> {
+		const result = await readKmPngJson(filePath);
 		if (result.kind == 'found') {
 			try {
 				JSON.parse(result.json);
@@ -642,10 +714,10 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		let result = '';
 		switch (extName) {
 			case '.km':
-				result = fs.readFileSync(document.uri.fsPath, 'utf-8') || '{}';
+				result = await fs.promises.readFile(document.uri.fsPath, 'utf-8') || '{}';
 				break;
 			case '.km.png':
-				result = this.getKmPngContent(document.uri.fsPath, throwOnXmindError);
+				result = await this.getKmPngContent(document.uri.fsPath, throwOnXmindError);
 				break;
 			case '.xmind':
 				try {

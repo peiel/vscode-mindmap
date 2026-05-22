@@ -9,3 +9,4 @@ testDir
 types
 
 sync_config.jsonc
+.cursor/

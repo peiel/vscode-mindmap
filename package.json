@@ -111,7 +111,7 @@
         }
     },
     "scripts": {
-        "build": "npm run build:webui && npm run package && npm exec --yes --package @vscode/vsce -- vsce package --no-yarn",
+        "build": "npm run build:webui && npm run package && vsce package --no-yarn",
         "build:webui": "cd webui && npm install --ignore-scripts && npm exec --yes --package bower -- bower install --allow-root && npm exec --yes --package grunt-cli -- grunt build",
         "compile": "tsc -watch -p ./",
         "watch": "webpack --watch --mode development",
