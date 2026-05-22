@@ -1,10 +1,13 @@
 import * as fs from 'fs';
 import * as zlib from 'zlib';
+import { promisify } from 'util';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ITXT_CHUNK_TYPE = 'iTXt';
 const IEND_CHUNK_TYPE = 'IEND';
 const KM_PNG_KEYWORD = 'vscode-mindmap-km';
+const deflate = promisify(zlib.deflate);
+const inflate = promisify(zlib.inflate);
 
 type PngChunk = {
 	type: string;
@@ -17,13 +20,19 @@ export type KmPngReadResult =
 	| { kind: 'missing' }
 	| { kind: 'found'; json: string };
 
-export function readKmPngJson(filePath: string): KmPngReadResult {
+export async function readKmPngJson(filePath: string): Promise<KmPngReadResult> {
 	try {
-		if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
+		const stat = await fs.promises.stat(filePath).catch((error: NodeJS.ErrnoException) => {
+			if (error.code === 'ENOENT') {
+				return undefined;
+			}
+			throw error;
+		});
+		if (!stat || stat.size === 0) {
 			return { kind: 'empty' };
 		}
 
-		const pngBuffer = fs.readFileSync(filePath);
+		const pngBuffer = await fs.promises.readFile(filePath);
 		if (!isPngBuffer(pngBuffer)) {
 			return { kind: 'invalid' };
 		}
@@ -33,7 +42,7 @@ export function readKmPngJson(filePath: string): KmPngReadResult {
 			if (chunk.type !== ITXT_CHUNK_TYPE) {
 				continue;
 			}
-			const text = parseITxtChunk(chunk.data);
+			const text = await parseITxtChunk(chunk.data);
 			if (text && text.keyword === KM_PNG_KEYWORD) {
 				return { kind: 'found', json: text.value };
 			}
@@ -45,19 +54,24 @@ export function readKmPngJson(filePath: string): KmPngReadResult {
 	}
 }
 
-export function writeKmPngJson(pngBuffer: Buffer, json: string): Buffer {
+export async function writeKmPngJson(pngBuffer: Buffer, json: string): Promise<Buffer> {
 	if (!isPngBuffer(pngBuffer)) {
 		throw new Error('Invalid PNG buffer.');
 	}
 
-	const chunks = parsePngChunks(pngBuffer).filter((chunk) => !isKmPngTextChunk(chunk));
+	const chunks: PngChunk[] = [];
+	for (const chunk of parsePngChunks(pngBuffer)) {
+		if (!(await isKmPngTextChunk(chunk))) {
+			chunks.push(chunk);
+		}
+	}
 	const iendIndex = chunks.findIndex((chunk) => chunk.type === IEND_CHUNK_TYPE);
 	if (iendIndex === -1) {
 		throw new Error('PNG file is missing an IEND chunk.');
 	}
 
 	const outputChunks: Buffer[] = [PNG_SIGNATURE];
-	const kmTextChunk = createPngChunk(ITXT_CHUNK_TYPE, createKmPngTextData(json));
+	const kmTextChunk = createPngChunk(ITXT_CHUNK_TYPE, await createKmPngTextData(json));
 	chunks.forEach((chunk, index) => {
 		if (index === iendIndex) {
 			outputChunks.push(kmTextChunk);
@@ -120,16 +134,16 @@ function parsePngChunks(buffer: Buffer): PngChunk[] {
 	return chunks;
 }
 
-function isKmPngTextChunk(chunk: PngChunk): boolean {
+async function isKmPngTextChunk(chunk: PngChunk): Promise<boolean> {
 	if (chunk.type !== ITXT_CHUNK_TYPE) {
 		return false;
 	}
-	const text = parseITxtChunk(chunk.data);
+	const text = await parseITxtChunk(chunk.data);
 	return text?.keyword === KM_PNG_KEYWORD;
 }
 
-function createKmPngTextData(json: string): Buffer {
-	const compressedJson = zlib.deflateSync(Buffer.from(json, 'utf8'));
+async function createKmPngTextData(json: string): Promise<Buffer> {
+	const compressedJson = await deflate(Buffer.from(json, 'utf8'));
 	return Buffer.concat([
 		Buffer.from(KM_PNG_KEYWORD, 'latin1'),
 		Buffer.from([0x00]),
@@ -141,7 +155,7 @@ function createKmPngTextData(json: string): Buffer {
 	]);
 }
 
-function parseITxtChunk(data: Buffer): { keyword: string; value: string } | undefined {
+async function parseITxtChunk(data: Buffer): Promise<{ keyword: string; value: string } | undefined> {
 	const keywordEnd = data.indexOf(0x00);
 	if (keywordEnd < 0) {
 		return undefined;
@@ -175,7 +189,7 @@ function parseITxtChunk(data: Buffer): { keyword: string; value: string } | unde
 		if (compressionMethod !== 0x00) {
 			return undefined;
 		}
-		return { keyword, value: zlib.inflateSync(textBuffer).toString('utf8') };
+		return { keyword, value: (await inflate(textBuffer)).toString('utf8') };
 	}
 
 	if (compressionFlag === 0x00) {

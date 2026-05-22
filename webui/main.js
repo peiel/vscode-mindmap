@@ -1,6 +1,10 @@
 /**
  * initial kityminder-editor
  */
+let isImportingMindData = false;
+let kmPngDraftTimer = null;
+let currentFileExtName = "";
+
 angular
 	.module("kityminderDemo", ["kityminderEditor"])
 	.config(function (configProvider) {
@@ -14,7 +18,7 @@ angular
 	})
 	.controller("MainController", function ($scope) {
 		function importMindData(importData, extName) {
-			window.isImportingMindData = true;
+			isImportingMindData = true;
 			let importTask = Promise.resolve();
 			try {
 				importTask = importTask.then(() => {
@@ -32,8 +36,8 @@ angular
 				console.error(ex);
 			}
 			importTask.then(
-				() => setTimeout(() => (window.isImportingMindData = false), 0),
-				() => setTimeout(() => (window.isImportingMindData = false), 0)
+				() => setTimeout(() => (isImportingMindData = false), 0),
+				() => setTimeout(() => (isImportingMindData = false), 0)
 			);
 			return importTask;
 		}
@@ -62,28 +66,28 @@ angular
 		}
 
 		function scheduleKmPngDraft(version) {
-			if (window.kmPngDraftTimer) {
-				clearTimeout(window.kmPngDraftTimer);
+			if (kmPngDraftTimer) {
+				clearTimeout(kmPngDraftTimer);
 			}
-			window.kmPngDraftTimer = setTimeout(() => {
-				window.kmPngDraftTimer = null;
+			kmPngDraftTimer = setTimeout(() => {
+				kmPngDraftTimer = null;
 				postCurrentKmPng("draft", version);
 			}, 500);
 		}
 
 		function flushKmPngDraft(version) {
-			if (window.kmPngDraftTimer) {
-				clearTimeout(window.kmPngDraftTimer);
-				window.kmPngDraftTimer = null;
+			if (kmPngDraftTimer) {
+				clearTimeout(kmPngDraftTimer);
+				kmPngDraftTimer = null;
 			}
 			return postCurrentKmPng("save", version);
 		}
 
 		function saveCurrentDocument() {
 			const version = documentVersion;
-			if (window.fileExtName === ".km.png") {
+			if (currentFileExtName === ".km.png") {
 				flushKmPngDraft(version);
-			} else if (window.fileExtName === ".svg") {
+			} else if (currentFileExtName === ".svg") {
 				window.minder.exportData("svg").then((data) => {
 					window.vscode.postMessage({
 						command: "save",
@@ -103,13 +107,13 @@ angular
 		function listenContentChange() {
 			if (listenContentChange.listened) return;
 			window.minder.on("contentchange", (e) => {
-				if (window.isImportingMindData) {
+				if (isImportingMindData) {
 					return;
 				}
 				const version = bumpDocumentVersion();
-				if (window.fileExtName === ".km.png") {
+				if (currentFileExtName === ".km.png") {
 					scheduleKmPngDraft(version);
-				} else if (window.fileExtName === ".svg") {
+				} else if (currentFileExtName === ".svg") {
 					window.minder.exportData("svg").then((data) => {
 						window.vscode.postMessage({
 							command: "draft",
@@ -128,6 +132,20 @@ angular
 			listenContentChange.listened = true;
 		}
 
+		function isMacOsHideShortcut(e) {
+			const keyCode = e.keyCode || e.which || e.charCode;
+			const key = e.key && e.key.toLowerCase();
+			return e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (key === "h" || keyCode === 72);
+		}
+
+		function hideApplication(e) {
+			window.vscode.postMessage({
+				command: "hideApplication",
+			});
+			e.preventDefault();
+			e.stopPropagation();
+		}
+
 		$scope.initEditor = function (editor, minder) {
 			window.editor = editor;
 			window.minder = minder;
@@ -136,15 +154,17 @@ angular
 			 * receive message event from extension
 			 */
 			window.addEventListener("message", function (event) {
-				window.message = event.data;
-				const { command, extName } = window.message;
-				window.fileExtName = extName;
+				const message = event.data;
+				const { command, extName } = message;
+				if (extName) {
+					currentFileExtName = extName;
+				}
 
 				switch (command) {
 					case "import":
 					case "reload": {
 						const importTask = importMindData(
-							window.message.importData,
+							message.importData,
 							extName
 						);
 						importTask.then(listenContentChange, listenContentChange);
@@ -154,12 +174,16 @@ angular
 			});
 
 			window.addEventListener("keydown", (e) => {
+				if (isMacOsHideShortcut(e)) {
+					hideApplication(e);
+					return;
+				}
 				const keyCode = e.keyCode || e.which || e.charCode;
 				const ctrlKey = e.ctrlKey || e.metaKey;
 				if (ctrlKey && keyCode === 83) {
 					saveCurrentDocument();
 				}
-			});
+			}, true);
 
 			window.minder.on("click", (e) => {
 				try {
