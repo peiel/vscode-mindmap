@@ -5,8 +5,7 @@
         <i class="close-note-editor glyphicon glyphicon-remove" ng-click="closeNoteEditor()"></i>
     </div>
     <div class="panel-body">
-        <div ng-show="noteEnabled"
-             ui-codemirror="{ onLoad: codemirrorLoaded }"
+        <div ui-codemirror="{ onLoad: codemirrorLoaded }"
              ng-model="noteContent"
              ui-codemirror-opts="{
                 gfm: true,
@@ -17,8 +16,5 @@
                 lineNumbers:true
              }">
         </div>
-        <p ng-show="!noteEnabled" class="km-note-tips">
-            {{ 'placeholder' | lang: 'ui/noteeditor' }}
-        </p>
     </div>
 </div>

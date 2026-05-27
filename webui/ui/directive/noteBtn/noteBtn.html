@@ -3,7 +3,7 @@
             class="btn btn-default note-btn"
             title="{{ 'note' | lang:'ui' }}"
             ng-class="{'active': isopen}"
-            ng-click="addNote()"
+            ng-click="toggleNote()"
             ng-disabled="minder.queryCommandState('note') === -1"></button>
     <button type="button"
             class="btn btn-default note-btn-caption dropdown-toggle"

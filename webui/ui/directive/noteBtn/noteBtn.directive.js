@@ -10,6 +10,10 @@ angular.module('kityminderEditor')
             link: function($scope) {
                 var minder = $scope.minder;
 
+                $scope.toggleNote = function() {
+                    valueTransfer.noteEditorOpen = !valueTransfer.noteEditorOpen;
+                };
+
                 $scope.addNote =function() {
                     valueTransfer.noteEditorOpen = true;
                 };

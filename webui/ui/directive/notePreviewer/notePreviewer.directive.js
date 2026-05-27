@@ -1,7 +1,7 @@
 // TODO: 使用一个 div 容器作为 previewer，而不是两个
 angular.module('kityminderEditor')
 
-	.directive('notePreviewer', ['$sce', 'valueTransfer', function($sce, valueTransfer) {
+	.directive('notePreviewer', ['$sce', function($sce) {
 		return {
 			restrict: 'A',
 			templateUrl: 'ui/directive/notePreviewer/notePreviewer.html',
@@ -10,7 +10,6 @@ angular.module('kityminderEditor')
 				var $container = element.parent();
 				var $previewer = element.children();
 				scope.showNotePreviewer = false;
-				valueTransfer.noteEditorOpen = false;
 
 				marked.setOptions({
                     gfm: true,
@@ -41,9 +40,6 @@ angular.module('kityminderEditor')
 				$(document).on('mousedown mousewheel DOMMouseScroll', function() {
 					if (!previewLive) return;
 					scope.showNotePreviewer = false;
-					if (!minder.getSelectedNode()) {
-						valueTransfer.noteEditorOpen = false;
-					}
 
 					scope.$apply();
 				});
@@ -85,11 +81,6 @@ angular.module('kityminderEditor')
 					};
 
 					scope.showNotePreviewer = true;
-
-					var currNode = minder.getSelectedNode()
-					if (currNode == node) {
-						valueTransfer.noteEditorOpen = true;
-					}
 
 					var view = $previewer[0].querySelector('.highlight');
 					if (view) {
