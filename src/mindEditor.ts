@@ -398,19 +398,35 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 			return;
 		}
 
+		const appName = vscode.env.appName || 'Visual Studio Code';
+		const scripts = [
+			'tell application id "com.microsoft.VSCode" to hide',
+			`tell application ${this.toAppleScriptString(appName)} to hide`,
+			'tell application "System Events" to set visible of first application process whose frontmost is true to false',
+		];
+
+		this.runAppleScript(scripts);
+	}
+
+	private runAppleScript(scripts: string[], index = 0) {
 		childProcess.execFile(
 			'/usr/bin/osascript',
-			[
-				'-e',
-				'tell application "System Events" to set visible of first application process whose frontmost is true to false'
-			],
+			['-e', scripts[index]],
 			{ timeout: 2000 },
 			(error) => {
 				if (error) {
+					if (index + 1 < scripts.length) {
+						this.runAppleScript(scripts, index + 1);
+						return;
+					}
 					console.error(error);
 				}
 			}
 		);
+	}
+
+	private toAppleScriptString(value: string) {
+		return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 	}
 
 	private async exportDocument(message: ExportDocumentMessage): Promise<void> {

@@ -23,6 +23,8 @@ export declare class MindEditorProvider implements vscode.CustomEditorProvider {
     private delay;
     private notifyExternalExtensions;
     private hideApplication;
+    private runAppleScript;
+    private toAppleScriptString;
     private exportDocument;
     private getExportFilters;
     private getKmPngMessageContent;
