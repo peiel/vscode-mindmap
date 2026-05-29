@@ -1,6 +1,5 @@
 angular.module('kityminderEditor', [
     'ui.bootstrap',
-	'ui.codemirror',
 	'ui.colorpicker'
 ])
 	.config(function($sceDelegateProvider) {

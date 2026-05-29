@@ -126,19 +126,131 @@
         }
 
         .panel-body {
+            position: absolute;
+            top: 41px;
+            right: 0;
+            bottom: 0;
+            left: 0;
             padding: 0;
+            overflow: hidden;
         }
     }
 
-    .CodeMirror {
-        position: absolute;
-        top: 41px;
-        bottom: 0;
-        height: auto;
+    .vditor-note-host {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
         cursor: text;
+        border: none;
+        border-radius: 0;
+        background: #fff;
+
+        &.vditor {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .vditor-toolbar {
+            display: none!important;
+        }
+
+        .vditor-content {
+            flex: 1 1 auto;
+            min-height: 0;
+            height: 100%;
+        }
+
+        .vditor-wysiwyg {
+            height: 100%;
+            min-height: 100%;
+            padding: 0;
+            overflow: auto;
+            color: #333;
+            font-size: 14px;
+            line-height: 1.45;
+            font-family: consolas, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        .vditor-wysiwyg pre.vditor-reset {
+            height: 100%;
+            margin: 0;
+            padding: 10px 12px 32px!important;
+            border: none;
+            border-radius: 0;
+            background: #fff!important;
+            box-shadow: none;
+            outline: none;
+            overflow: auto;
+        }
+
+        .vditor-wysiwyg pre.vditor-reset:focus {
+            background: #fff;
+        }
+
+        .vditor-reset,
+        .vditor-wysiwyg pre.vditor-reset {
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .vditor-reset h1 {
+            font-size: 22px;
+        }
+
+        .vditor-reset h2 {
+            font-size: 19px;
+        }
+
+        .vditor-reset h3 {
+            font-size: 16px;
+        }
+
+        .vditor-reset pre,
+        .vditor-reset code {
+            background: rgba(45, 141, 234, .08);
+        }
+
+        .vditor-wysiwyg > .vditor-reset > h1:before,
+        .vditor-wysiwyg > .vditor-reset > h2:before,
+        .vditor-wysiwyg > .vditor-reset > h3:before,
+        .vditor-wysiwyg > .vditor-reset > h4:before,
+        .vditor-wysiwyg > .vditor-reset > h5:before,
+        .vditor-wysiwyg > .vditor-reset > h6:before,
+        .vditor-wysiwyg div.vditor-wysiwyg__block:before,
+        .vditor-wysiwyg div[data-type="link-ref-defs-block"]:before,
+        .vditor-wysiwyg div[data-type="footnotes-block"]:before,
+        .vditor-wysiwyg .vditor-toc:before {
+            display: none!important;
+            content: none!important;
+        }
+
+        .vditor-wysiwyg__block {
+            margin: 8px 0;
+        }
+
+        .vditor-wysiwyg__block pre:first-child,
+        .vditor-wysiwyg__block pre:last-child {
+            margin: 0;
+        }
+
+        .vditor-wysiwyg__block pre:first-child code {
+            color: #555;
+        }
+
+        .vditor-wysiwyg__preview {
+            min-height: 0;
+        }
+    }
+
+    .vditor-note-readonly {
+        cursor: default;
+        opacity: .65;
+    }
+
+    .km-note-tips {
+        padding: 8px 10px;
         font-size: 14px;
-        line-height: 1.3em;
-        font-family: consolas;
+        color: #999;
     }
 }
 .km-note-tips {

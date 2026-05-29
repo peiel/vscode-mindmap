@@ -5,16 +5,9 @@
         <i class="close-note-editor glyphicon glyphicon-remove" ng-click="closeNoteEditor()"></i>
     </div>
     <div class="panel-body">
-        <div ui-codemirror="{ onLoad: codemirrorLoaded }"
-             ng-model="noteContent"
-             ui-codemirror-opts="{
-                gfm: true,
-                breaks: true,
-                lineWrapping : true,
-                mode: 'gfm',
-                dragDrop: false,
-                lineNumbers:true
-             }">
+        <div class="vditor-note-host"></div>
+        <div class="km-note-tips" ng-if="noteEditorUnavailable">
+            Vditor editor failed to load.
         </div>
     </div>
 </div>

@@ -9,43 +9,105 @@ angular.module('kityminderEditor')
 				var minder = scope.minder;
 				var $container = element.parent();
 				var $previewer = element.children();
+				var previewTimer;
+				var hideTimer;
+				var previewCacheKey = null;
+				var previewCacheHtml = null;
+				var previewLive = false;
+				var previewHovering = false;
+				var HIDE_DELAY = 350;
 				scope.showNotePreviewer = false;
 
 				marked.setOptions({
-                    gfm: true,
-                    tables: true,
-                    breaks: true,
-                    pedantic: false,
-                    sanitize: true,
-                    smartLists: true,
-                    smartypants: false
-                });
+					gfm: true,
+					tables: true,
+					breaks: true,
+					pedantic: false,
+					sanitize: true,
+					smartLists: true,
+					smartypants: false
+				});
 
+				function escapeRegExp(text) {
+					return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				}
 
-				var previewTimer;
-				minder.on('shownoterequest', function(e) {
+				function getPreviewHtml(note, keyword) {
+					note = note || '';
+					keyword = keyword || '';
+					var cacheKey = note + '\u0000' + keyword;
+					if (cacheKey === previewCacheKey) {
+						return previewCacheHtml;
+					}
 
+					var html = marked(note);
+					if (keyword) {
+						html = html.replace(new RegExp('(' + escapeRegExp(keyword) + ')', 'ig'), '<span class="highlight">$1</span>');
+					}
+					previewCacheKey = cacheKey;
+					previewCacheHtml = html;
+					return html;
+				}
+
+				function showNotePreview(e) {
+					clearTimeout(previewTimer);
+					clearTimeout(hideTimer);
+					previewHovering = false;
+					if (!e || !e.node) return;
 					previewTimer = setTimeout(function() {
 						preview(e.node, e.keyword);
 					}, 300);
-				});
-				minder.on('hidenoterequest', function() {
+				}
+
+				function forceHidePreview() {
 					clearTimeout(previewTimer);
-
-                    scope.showNotePreviewer = false;
-                    //scope.$apply();
-				});
-
-				var previewLive = false;
-				$(document).on('mousedown mousewheel DOMMouseScroll', function() {
-					if (!previewLive) return;
+					clearTimeout(hideTimer);
 					scope.showNotePreviewer = false;
+					previewLive = false;
+					previewHovering = false;
+					scope.$evalAsync();
+				}
 
-					scope.$apply();
-				});
+				function scheduleHidePreview() {
+					clearTimeout(hideTimer);
+					hideTimer = setTimeout(function() {
+						if (!previewHovering) {
+							forceHidePreview();
+						}
+					}, HIDE_DELAY);
+				}
+
+				function hideNotePreview(e) {
+					clearTimeout(previewTimer);
+					if (!e || !e.node) {
+						forceHidePreview();
+						return;
+					}
+					scheduleHidePreview();
+				}
+
+				function hideLivePreview() {
+					if (!previewLive) return;
+					forceHidePreview();
+				}
+
+				minder.on('shownoterequest', showNotePreview);
+				minder.on('hidenoterequest', hideNotePreview);
+
+				$(document).on('mousedown mousewheel DOMMouseScroll', hideLivePreview);
 
 				element.on('mousedown mousewheel DOMMouseScroll', function(e) {
 					e.stopPropagation();
+				});
+
+				$previewer.on('mouseenter', function() {
+					previewHovering = true;
+					clearTimeout(hideTimer);
+				});
+
+				$previewer.on('mouseleave', function() {
+					previewHovering = false;
+					scheduleHidePreview();
 				});
 
 				function preview(node, keyword) {
@@ -55,10 +117,7 @@ angular.module('kityminderEditor')
 
 					$previewer[0].scrollTop = 0;
 
-					var html = marked(note);
-					if (keyword) {
-						html = html.replace(new RegExp('(' + keyword + ')', 'ig'), '<span class="highlight">$1</span>');
-					}
+					var html = getPreviewHtml(note, keyword);
 					scope.noteContent = $sce.trustAsHtml(html);
 					scope.$apply(); // 让浏览器重新渲染以获取 previewer 提示框的尺寸
 
@@ -73,7 +132,6 @@ angular.module('kityminderEditor')
 					if (x < 0) x = 10;
 					if (x + pw > cw) x = b.left - pw - 10 - $container[0].offsetLeft;
 					if (y + ph > ch) y = b.top - ph - 10 - $container[0].offsetTop;
-
 
 					scope.previewerStyle = {
 						'left': Math.round(x) + 'px',
@@ -90,6 +148,15 @@ angular.module('kityminderEditor')
 
 					scope.$apply();
 				}
+
+				scope.$on('$destroy', function() {
+					clearTimeout(previewTimer);
+					clearTimeout(hideTimer);
+					minder.off('shownoterequest', showNotePreview);
+					minder.off('hidenoterequest', hideNotePreview);
+					$(document).off('mousedown mousewheel DOMMouseScroll', hideLivePreview);
+					$previewer.off('mouseenter mouseleave');
+				});
 			}
 		}
-}]);
+	}]);

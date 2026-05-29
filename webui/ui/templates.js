@@ -70,14 +70,7 @@ angular.module('kityminderEditor').run(['$templateCache', function($templateCach
 
 
   $templateCache.put('ui/directive/noteEditor/noteEditor.html',
-    "<div class=\"panel panel-default\" ng-init=\"noteEditorOpen = false\" ng-show=\"noteEditorOpen\"><div class=\"panel-heading\"><h3 class=\"panel-title\">{{ 'title' | lang: 'ui/noteeditor' }}</h3><span>（<a class=\"help\" href=\"https://www.zybuluo.com/techird/note/46064\" target=\"_blank\">{{ 'hint' | lang: 'ui/noteeditor' }}</a>）</span> <i class=\"close-note-editor glyphicon glyphicon-remove\" ng-click=\"closeNoteEditor()\"></i></div><div class=\"panel-body\"><div ui-codemirror=\"{ onLoad: codemirrorLoaded }\" ng-model=\"noteContent\" ui-codemirror-opts=\"{\n" +
-    "                gfm: true,\n" +
-    "                breaks: true,\n" +
-    "                lineWrapping : true,\n" +
-    "                mode: 'gfm',\n" +
-    "                dragDrop: false,\n" +
-    "                lineNumbers:true\n" +
-    "             }\"></div></div></div>"
+    "<div class=\"panel panel-default\" ng-init=\"noteEditorOpen = false\" ng-show=\"noteEditorOpen\"><div class=\"panel-heading\"><h3 class=\"panel-title\">{{ 'title' | lang: 'ui/noteeditor' }}</h3><span>（<a class=\"help\" href=\"https://www.zybuluo.com/techird/note/46064\" target=\"_blank\">{{ 'hint' | lang: 'ui/noteeditor' }}</a>）</span> <i class=\"close-note-editor glyphicon glyphicon-remove\" ng-click=\"closeNoteEditor()\"></i></div><div class=\"panel-body\"><div class=\"vditor-note-host\"></div><div class=\"km-note-tips\" ng-if=\"noteEditorUnavailable\">Vditor editor failed to load.</div></div></div>"
   );
 
 

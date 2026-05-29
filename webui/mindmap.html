@@ -7,11 +7,11 @@
     <title>mindmap</title>
     <!-- bower:css -->
     <link rel="stylesheet" href="${vscode}/bower_components/bootstrap/dist/css/bootstrap.css" />
-    <link rel="stylesheet" href="${vscode}/bower_components/codemirror/lib/codemirror.css" />
     <link rel="stylesheet" href="${vscode}/bower_components/hotbox/hotbox.css" />
     <link rel="stylesheet" href="${vscode}/node_modules/kityminder-core/dist/kityminder.core.css" />
     <link rel="stylesheet" href="${vscode}/bower_components/color-picker/dist/color-picker.min.css" />
     <!-- endbower -->
+    <link rel="stylesheet" href="${vscode}/vendor/vditor-note/dist/index.css" />
     <link rel="stylesheet" href="${vscode}/dist/kityminder.editor.min.css" />
 
     <style>
@@ -28,6 +28,7 @@
         window.vscode = acquireVsCodeApi();
         var lang = "${vscode_lang}";
         var upload_url = "${vscode_upload_url}";
+        window.KM_VDITOR_CDN = "${vscode}/vendor/vditor-note";
         var obj = {
             lang,
             upload_url
@@ -45,15 +46,6 @@
 <script src="${vscode}/bower_components/bootstrap/dist/js/bootstrap.js"></script>
 <script src="${vscode}/bower_components/angular/angular.js"></script>
 <script src="${vscode}/bower_components/angular-bootstrap/ui-bootstrap-tpls.js"></script>
-<script src="${vscode}/bower_components/codemirror/lib/codemirror.js"></script>
-<script src="${vscode}/bower_components/codemirror/mode/xml/xml.js"></script>
-<script src="${vscode}/bower_components/codemirror/mode/javascript/javascript.js"></script>
-<script src="${vscode}/bower_components/codemirror/mode/css/css.js"></script>
-<script src="${vscode}/bower_components/codemirror/mode/htmlmixed/htmlmixed.js"></script>
-<script src="${vscode}/bower_components/codemirror/mode/markdown/markdown.js"></script>
-<script src="${vscode}/bower_components/codemirror/addon/mode/overlay.js"></script>
-<script src="${vscode}/bower_components/codemirror/mode/gfm/gfm.js"></script>
-<script src="${vscode}/bower_components/angular-ui-codemirror/ui-codemirror.js"></script>
 <script src="${vscode}/bower_components/marked/lib/marked.js"></script>
 <script src="${vscode}/bower_components/hotbox/hotbox.js"></script>
 <script src="${vscode}/bower_components/kity/dist/kity.min.js"></script>
@@ -62,6 +54,8 @@
 <script src="${vscode}/bower_components/js-base64/base64.min.js"></script>
 <!-- endbower -->
 
+<script src="${vscode}/vendor/vditor-note/dist/index.min.js"></script>
+<script src="${vscode}/vendor/vditor-note/vditor-note-adapter.js"></script>
 <script src="${vscode}/dist/kityminder.editor.min.js"></script>
 
 <script src="${vscode}/main.js"></script>
