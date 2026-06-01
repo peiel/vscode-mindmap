@@ -12,7 +12,7 @@ node_modules
 tsconfig.json
 vsc-extension-quickstart.md
 tslint.json
-*.vsix
+mindmap-*.vsix
 testDir/**
 install-*.js
 
@@ -43,12 +43,22 @@ webui/.jscsrc
 !webui/bower_components/bootstrap/dist/fonts/glyphicons-halflings-regular.woff2
 !webui/bower_components/bootstrap/dist/fonts/glyphicons-halflings-regular.woff
 !webui/bower_components/bootstrap/dist/fonts/glyphicons-halflings-regular.ttf
+!webui/bower_components/codemirror/lib/codemirror.css
 !webui/bower_components/hotbox/hotbox.css
 !webui/bower_components/color-picker/dist/color-picker.min.css
 !webui/bower_components/jquery/dist/jquery.js
 !webui/bower_components/bootstrap/dist/js/bootstrap.js
 !webui/bower_components/angular/angular.js
 !webui/bower_components/angular-bootstrap/ui-bootstrap-tpls.js
+!webui/bower_components/codemirror/lib/codemirror.js
+!webui/bower_components/codemirror/mode/xml/xml.js
+!webui/bower_components/codemirror/mode/javascript/javascript.js
+!webui/bower_components/codemirror/mode/css/css.js
+!webui/bower_components/codemirror/mode/htmlmixed/htmlmixed.js
+!webui/bower_components/codemirror/mode/markdown/markdown.js
+!webui/bower_components/codemirror/addon/mode/overlay.js
+!webui/bower_components/codemirror/mode/gfm/gfm.js
+!webui/bower_components/angular-ui-codemirror/ui-codemirror.js
 !webui/bower_components/marked/lib/marked.js
 !webui/bower_components/kity/dist/kity.min.js
 !webui/bower_components/hotbox/hotbox.js

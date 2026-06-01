@@ -2,11 +2,8 @@
  * initial kityminder-editor
  */
 let isImportingMindData = false;
-let draftTimer = null;
-let pendingDraftVersion = null;
+let kmPngDraftTimer = null;
 let currentFileExtName = "";
-const DRAFT_DEBOUNCE_DELAY = 1000;
-const HEAVY_DRAFT_DEBOUNCE_DELAY = 1500;
 
 angular
 	.module("kityminderDemo", ["kityminderEditor"])
@@ -68,58 +65,28 @@ angular
 			});
 		}
 
-		function isHeavyDraftFile() {
-			return currentFileExtName === ".km.png" || currentFileExtName === ".svg";
+		function scheduleKmPngDraft(version) {
+			if (kmPngDraftTimer) {
+				clearTimeout(kmPngDraftTimer);
+			}
+			kmPngDraftTimer = setTimeout(() => {
+				kmPngDraftTimer = null;
+				postCurrentKmPng("draft", version);
+			}, 500);
 		}
 
-		function clearDraftTimer() {
-			if (draftTimer) {
-				clearTimeout(draftTimer);
-				draftTimer = null;
+		function flushKmPngDraft(version) {
+			if (kmPngDraftTimer) {
+				clearTimeout(kmPngDraftTimer);
+				kmPngDraftTimer = null;
 			}
-			pendingDraftVersion = null;
-		}
-
-		function postCurrentDraft(version) {
-			if (currentFileExtName === ".km.png") {
-				return postCurrentKmPng("draft", version);
-			}
-			if (currentFileExtName === ".svg") {
-				return window.minder.exportData("svg").then((data) => {
-					window.vscode.postMessage({
-						command: "draft",
-						exportData: data,
-						documentVersion: version,
-					});
-				});
-			}
-			window.vscode.postMessage({
-				command: "draft",
-				exportData: getCurrentMindJson(),
-				documentVersion: version,
-			});
-			return Promise.resolve();
-		}
-
-		function scheduleCurrentDraft(version) {
-			if (draftTimer) {
-				clearTimeout(draftTimer);
-			}
-			pendingDraftVersion = version;
-			draftTimer = setTimeout(() => {
-				const versionToPost = pendingDraftVersion;
-				draftTimer = null;
-				pendingDraftVersion = null;
-				postCurrentDraft(versionToPost);
-			}, isHeavyDraftFile() ? HEAVY_DRAFT_DEBOUNCE_DELAY : DRAFT_DEBOUNCE_DELAY);
+			return postCurrentKmPng("save", version);
 		}
 
 		function saveCurrentDocument() {
-			window.minder.fire("flushnoterequest");
 			const version = documentVersion;
-			clearDraftTimer();
 			if (currentFileExtName === ".km.png") {
-				postCurrentKmPng("save", version);
+				flushKmPngDraft(version);
 			} else if (currentFileExtName === ".svg") {
 				window.minder.exportData("svg").then((data) => {
 					window.vscode.postMessage({
@@ -144,7 +111,23 @@ angular
 					return;
 				}
 				const version = bumpDocumentVersion();
-				scheduleCurrentDraft(version);
+				if (currentFileExtName === ".km.png") {
+					scheduleKmPngDraft(version);
+				} else if (currentFileExtName === ".svg") {
+					window.minder.exportData("svg").then((data) => {
+						window.vscode.postMessage({
+							command: "draft",
+							exportData: data,
+							documentVersion: version,
+						});
+					});
+				} else {
+					window.vscode.postMessage({
+						command: "draft",
+						exportData: getCurrentMindJson(),
+						documentVersion: version,
+					});
+				}
 			});
 			listenContentChange.listened = true;
 		}
@@ -180,7 +163,6 @@ angular
 				switch (command) {
 					case "import":
 					case "reload": {
-						clearDraftTimer();
 						const importTask = importMindData(
 							message.importData,
 							extName
