@@ -42,6 +42,39 @@ angular
 			return importTask;
 		}
 
+		function normalizeMindJsonValue(value) {
+			if (Array.isArray(value)) {
+				return value.map(normalizeMindJsonValue);
+			}
+			if (value && typeof value === "object") {
+				return Object.keys(value)
+					.sort()
+					.reduce((normalized, key) => {
+						normalized[key] = normalizeMindJsonValue(value[key]);
+						return normalized;
+					}, {});
+			}
+			return value;
+		}
+
+		function normalizeMindJson(data) {
+			return JSON.stringify(normalizeMindJsonValue(data || {}));
+		}
+
+		function shouldSkipReload(importData, extName) {
+			if (extName === ".svg") {
+				return false;
+			}
+			try {
+				const currentMindJson = normalizeMindJson(window.minder.exportJson());
+				const nextMindJson = normalizeMindJson(JSON.parse(importData || "{}"));
+				return currentMindJson === nextMindJson;
+			} catch (ex) {
+				console.error(ex);
+				return false;
+			}
+		}
+
 		function getCurrentMindJson() {
 			return JSON.stringify(window.minder.exportJson(), null, 4);
 		}
@@ -161,8 +194,19 @@ angular
 				}
 
 				switch (command) {
-					case "import":
+					case "import": {
+						const importTask = importMindData(
+							message.importData,
+							extName
+						);
+						importTask.then(listenContentChange, listenContentChange);
+						break;
+					}
 					case "reload": {
+						if (shouldSkipReload(message.importData, extName)) {
+							listenContentChange();
+							break;
+						}
 						const importTask = importMindData(
 							message.importData,
 							extName
@@ -181,6 +225,8 @@ angular
 				const keyCode = e.keyCode || e.which || e.charCode;
 				const ctrlKey = e.ctrlKey || e.metaKey;
 				if (ctrlKey && keyCode === 83) {
+					e.preventDefault();
+					e.stopPropagation();
 					saveCurrentDocument();
 				}
 			}, true);
