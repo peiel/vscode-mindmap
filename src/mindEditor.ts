@@ -20,7 +20,7 @@ const ExportType = {
 } as const;
 type ExportType = typeof ExportType[keyof typeof ExportType];
 const viewType = 'vscode-mindmap.editor';
-const INTERNAL_WRITE_SIGNATURE_TTL_MS = 1000;
+const INTERNAL_WRITE_SIGNATURE_TTL_MS = 3000;
 
 type InternalWriteSignature = {
 	signature: string;
@@ -81,6 +81,31 @@ function getMindMapFileType(filePath: string): MindMapFileType {
 
 function getExportExtension(type: string): string {
 	return type == ExportType.KmPng ? 'km.png' : type;
+}
+
+function normalizeMindJsonValue(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map(normalizeMindJsonValue);
+	}
+	if (value && typeof value === 'object') {
+		const normalized: Record<string, unknown> = {};
+		Object.keys(value as Record<string, unknown>)
+			.sort()
+			.forEach((key) => {
+				normalized[key] = normalizeMindJsonValue((value as Record<string, unknown>)[key]);
+			});
+		return normalized;
+	}
+	return value;
+}
+
+function normalizeMindJsonData(data: unknown): string {
+	const serialized = JSON.stringify(data ?? {});
+	return JSON.stringify(normalizeMindJsonValue(JSON.parse(serialized || '{}')));
+}
+
+function normalizeMindJsonContent(content: string): string {
+	return normalizeMindJsonData(JSON.parse(content || '{}'));
 }
 
 function getResvgResources(): Promise<{ fontBuffer: Buffer }> {
@@ -548,6 +573,10 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 				if (this.shouldSkipStaleDraft(filePath, message)) {
 					return;
 				}
+				if (await this.shouldSkipUnchangedWrite(filePath, message)) {
+					this.rememberWrittenDocumentVersion(filePath, message);
+					return;
+				}
 
 				this.beginInternalWrite(filePath);
 				try {
@@ -567,6 +596,34 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		};
 		queuedWrite.then(cleanupWriteQueue, cleanupWriteQueue);
 		return queuedWrite;
+	}
+
+	private async shouldSkipUnchangedWrite(
+		filePath: string,
+		message: UpdateDocumentMessage
+	): Promise<boolean> {
+		const extName = getMindMapFileType(filePath);
+		try {
+			const nextContent = normalizeMindJsonContent(message.exportData);
+			if (extName == '.km') {
+				const currentContent = await fs.promises.readFile(filePath, 'utf-8') || '{}';
+				return normalizeMindJsonContent(currentContent) == nextContent;
+			}
+			if (extName == '.xmind') {
+				const currentData = await parser.xmindToJSON(filePath);
+				return normalizeMindJsonData(currentData) == nextContent;
+			}
+			if (extName == '.km.png') {
+				if (this._blockedKmPngWrites.has(filePath)) {
+					return false;
+				}
+				const currentContent = await this.getKmPngContent(filePath, true);
+				return normalizeMindJsonContent(currentContent) == nextContent;
+			}
+		} catch (ex) {
+			return false;
+		}
+		return false;
 	}
 
 	private async writeDocument(
@@ -630,7 +687,6 @@ export class MindEditorProvider implements vscode.CustomEditorProvider {
 		}
 		const currentSignature = this.getFileSignature(filePath);
 		if (currentSignature && currentSignature == lastInternalWriteSignature.signature) {
-			this._lastInternalWriteSignatures.delete(filePath);
 			return true;
 		}
 		this._lastInternalWriteSignatures.delete(filePath);

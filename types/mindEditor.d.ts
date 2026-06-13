@@ -31,6 +31,7 @@ export declare class MindEditorProvider implements vscode.CustomEditorProvider {
     private writeKmPngDocument;
     private renderSvgToPngBuffer;
     private updateDocument;
+    private shouldSkipUnchangedWrite;
     private writeDocument;
     private shouldSkipStaleDraft;
     private rememberWrittenDocumentVersion;
